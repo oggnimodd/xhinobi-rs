@@ -24,4 +24,8 @@ pub struct Args {
     /// Use OSC52 escape sequence for clipboard over SSH
     #[arg(short = 'o', long = "osc52")]
     pub osc52: bool,
+
+    /// Remove comments from files using tree-sitter
+    #[arg(short = 'd', long = "decomment")]
+    pub decomment: bool,
 }

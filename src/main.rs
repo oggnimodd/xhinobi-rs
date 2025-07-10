@@ -9,6 +9,7 @@ use regex::Regex;
 mod cli;
 mod constants;
 mod helpers;
+mod decomment;
 
 use cli::Args;
 use constants::*;
@@ -20,7 +21,7 @@ struct FileData {
     name: String,
 }
 
-fn get_files(files: &[String], ignore_patterns: &[String]) -> Vec<FileData> {
+fn get_files(files: &[String], args: &Args) -> Vec<FileData> {
     let mut results = Vec::new();
     
     'outer: for file in files {
@@ -29,7 +30,7 @@ fn get_files(files: &[String], ignore_patterns: &[String]) -> Vec<FileData> {
         }
         
         // Check ignore patterns
-        for pattern in ignore_patterns {
+        for pattern in &args.ignore {
             if let Ok(glob_pattern) = glob::Pattern::new(pattern) {
                 if glob_pattern.matches(file) {
                     continue 'outer;
@@ -44,7 +45,7 @@ fn get_files(files: &[String], ignore_patterns: &[String]) -> Vec<FileData> {
             .unwrap_or(file)
             .to_string();
         
-        let file_content = if is_text_file(&basename) {
+        let mut file_content = if is_text_file(&basename) {
             match fs::read_to_string(&file_path) {
                 Ok(content) => content,
                 Err(e) => {
@@ -55,6 +56,15 @@ fn get_files(files: &[String], ignore_patterns: &[String]) -> Vec<FileData> {
         } else {
             basename.clone()
         };
+
+        if args.decomment {
+            if let Some(language) = decomment::get_language(&file_path) {
+                match decomment::clean_code(&file_content, language) {
+                    Ok(cleaned_content) => file_content = cleaned_content,
+                    Err(e) => eprintln!("Warning: Failed to decomment {}: {}", file, e),
+                }
+            }
+        }
         
         results.push(FileData {
             text: file_content,
@@ -155,7 +165,7 @@ fn main() {
         .collect();
     
     if !file_paths.is_empty() {
-        let content = get_files(&file_paths, &args.ignore);
+        let content = get_files(&file_paths, &args);
         process_files(&content, &args);
     }
 }
