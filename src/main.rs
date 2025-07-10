@@ -100,7 +100,11 @@ fn process_files(files: &[FileData], args: &Args) {
     // Handle output based on environment and flags
     if args.osc52 {
         copy_to_clipboard_osc52(&final_output);
-        println!("Sent {} characters to clipboard via OSC52", final_output.len());
+        println!(
+            "Sent {} characters (est. {} tokens) to clipboard via OSC52",
+            final_output.len(),
+            estimate_tokens(&final_output)
+        );
     } else if is_cloud_environment() {
         match create_temp_file(&final_output) {
             Ok(temp_path) => {
@@ -112,7 +116,12 @@ fn process_files(files: &[FileData], args: &Args) {
         }
     } else {
         match copy_to_clipboard(&final_output) {
-            Ok(method) => println!("Copied {} characters to clipboard using {}", final_output.len(), method),
+            Ok(method) => println!(
+                "Copied {} characters (est. {} tokens) to clipboard using {}",
+                final_output.len(),
+                estimate_tokens(&final_output),
+                method
+            ),
             Err(e) => {
                 eprintln!("Clipboard copy failed: {}", e);
                 println!("Printing content instead:");

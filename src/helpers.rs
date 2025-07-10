@@ -126,3 +126,8 @@ pub fn copy_to_clipboard_osc52(text: &str) {
     let encoded = general_purpose::STANDARD.encode(text.as_bytes());
     print!("\x1b]52;c;{}\x07", encoded);
 }
+
+/// Estimates the number of tokens based on the rule of thumb that 1 token is ~4 characters.
+pub fn estimate_tokens(text: &str) -> usize {
+    (text.len() as f64 / 4.0).ceil() as usize
+}
