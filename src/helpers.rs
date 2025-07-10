@@ -129,5 +129,5 @@ pub fn copy_to_clipboard_osc52(text: &str) {
 
 /// Estimates the number of tokens based on the rule of thumb that 1 token is ~4 characters.
 pub fn estimate_tokens(text: &str) -> usize {
-    (text.len() as f64 / 4.0).ceil() as usize
+    ((text.len() as f64 / 4.0) * 1.1).ceil() as usize
 }

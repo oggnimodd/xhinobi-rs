@@ -41,10 +41,24 @@ pub fn clean_code(content: &str, language: Language) -> Result<String> {
 
     comments_to_remove.sort_by_key(|r| r.start_byte);
 
+    let mut merged_ranges: Vec<Range> = Vec::new();
+    if !comments_to_remove.is_empty() {
+        let mut current_range = comments_to_remove[0];
+        for &next_range in &comments_to_remove[1..] {
+            if next_range.start_byte < current_range.end_byte {
+                current_range.end_byte = current_range.end_byte.max(next_range.end_byte);
+            } else {
+                merged_ranges.push(current_range);
+                current_range = next_range;
+            }
+        }
+        merged_ranges.push(current_range);
+    }
+
     let mut content_without_comments = String::new();
     let mut current_byte_pos = 0;
 
-    for range in comments_to_remove {
+    for range in merged_ranges {
         content_without_comments.push_str(&content[current_byte_pos..range.start_byte]);
         current_byte_pos = range.end_byte;
     }
