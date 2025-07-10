@@ -1,0 +1,11 @@
+[package]
+name = "xhinobi"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.0", features = ["derive"] }
+glob = "0.3"
+base64 = "0.21"
+tempfile = "3.8"
+regex = "1.10"
