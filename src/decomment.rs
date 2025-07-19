@@ -86,6 +86,7 @@ pub fn get_language(file_path: &Path) -> Option<Language> {
         "go" => Some(tree_sitter_go::language()),
         "sh" | "bash" => Some(tree_sitter_bash::language()),
         "php" => Some(tree_sitter_php::language_php()),
+        "lua" => Some(tree_sitter_lua::language()),
         _ => None,
     }
 }

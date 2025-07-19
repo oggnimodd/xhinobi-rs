@@ -360,6 +360,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter-lua"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b9fe6fc87bd480e1943fc1fcb02453fb2da050e4e8ce0daa67d801544046856"
+dependencies = [
+ "cc",
+ "tree-sitter",
+]
+
+[[package]]
 name = "tree-sitter-php"
 version = "0.22.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -590,6 +600,7 @@ dependencies = [
  "tree-sitter-go",
  "tree-sitter-javascript",
  "tree-sitter-json",
+ "tree-sitter-lua",
  "tree-sitter-php",
  "tree-sitter-python",
  "tree-sitter-rust",
