@@ -132,7 +132,28 @@ fn process_files(files: &[FileData], args: &Args) {
 }
 
 fn copy_to_clipboard(text: &str) -> Result<String, Box<dyn std::error::Error>> {
-    // Check if xclip is installed by checking its version.
+    let is_wayland = env::var("WAYLAND_DISPLAY").is_ok();
+
+    if is_wayland {
+        if Command::new("wl-copy").arg("--version").output().is_ok() {
+            let mut child = Command::new("wl-copy")
+                .stdin(Stdio::piped())
+                .spawn()?;
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(text.as_bytes())?;
+            } else {
+                return Err("Failed to open stdin for the wl-copy process.".into());
+            }
+            let status = child.wait()?;
+            if status.success() {
+                return Ok("wl-copy".to_string());
+            } else {
+                return Err(format!("wl-copy process exited with status: {}", status).into());
+            }
+        }
+    }
+
+    // Fallback to xclip
     if Command::new("xclip").arg("-version").output().is_err() {
         return Err("xclip command not found. Please install it to use the clipboard.".into());
     }
@@ -143,15 +164,12 @@ fn copy_to_clipboard(text: &str) -> Result<String, Box<dyn std::error::Error>> {
         .stdin(Stdio::piped())
         .spawn()?;
 
-    // Pipe the text to the xclip process.
     if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(text.as_bytes())?;
     } else {
-        // This case is unlikely but handled for robustness.
         return Err("Failed to open stdin for the xclip process.".into());
     }
 
-    // Wait for the xclip process to complete.
     let status = child.wait()?;
     if status.success() {
         Ok("xclip".to_string())
