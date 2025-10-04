@@ -141,7 +141,10 @@ pub fn list_cache_entries(cache_dir_override: &Option<String>) -> Result<Vec<Cac
     }
 
     let index_content = fs::read_to_string(&index_path).context("Failed to read cache index")?;
-    let index: CacheIndex = serde_json::from_str(&index_content).context("Failed to parse cache index")?;
+    let mut index: CacheIndex = serde_json::from_str(&index_content).context("Failed to parse cache index")?;
+
+    // Sort entries by timestamp descending (newest first)
+    index.entries.sort_by_key(|e| std::cmp::Reverse(e.timestamp));
 
     Ok(index.entries)
 }
@@ -314,7 +317,7 @@ pub fn interactive_cache_selection(cache_dir_override: &Option<String>, osc52: b
             format!(
                 "[{:02}] {} | {} chars | {} tokens | {} files | {}",
                 i + 1,
-                local_time.format("%Y-%m-%d %H:%M"),
+                local_time.format("%d %b %Y %H:%M"),
                 entry.file_size,
                 entry.token_count,
                 entry.source_file_count,
@@ -329,6 +332,8 @@ pub fn interactive_cache_selection(cache_dir_override: &Option<String>, osc52: b
 
     match selected {
         Ok(choice) => {
+            println!(); // Add a blank line for better formatting
+
             // Find the selected entry by extracting the index from the choice string
             let selected_index = choice
                 .split(']')
@@ -344,7 +349,7 @@ pub fn interactive_cache_selection(cache_dir_override: &Option<String>, osc52: b
                 let entry: CacheEntry = serde_json::from_str(&cache_content).context("Failed to parse cache entry")?;
 
                 copy_cache_to_clipboard(&entry, osc52)?;
-                println!("Selected cache entry copied to clipboard!");
+                println!("✓ Selected cache entry copied to clipboard!");
             }
         }
         Err(inquire::InquireError::OperationCanceled) => {
