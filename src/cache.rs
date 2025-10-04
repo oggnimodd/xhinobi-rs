@@ -22,6 +22,7 @@ pub struct CacheEntry {
     pub file_size: usize,
     pub source_file_count: usize,
     pub args_used: String,
+    pub working_dir: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -37,6 +38,7 @@ pub struct CacheIndexEntry {
     pub file_size: usize,
     pub source_file_count: usize,
     pub args_used: String,
+    pub working_dir: String,
 }
 
 pub fn get_cache_dir(override_dir: &Option<String>) -> Result<PathBuf> {
@@ -74,6 +76,10 @@ pub fn save_to_cache(
     let file_path = sessions_dir.join(&filename);
 
     // Create cache entry
+    let working_dir = env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+        .to_string_lossy()
+        .to_string();
+
     let entry = CacheEntry {
         timestamp,
         content: content.to_string(),
@@ -81,6 +87,7 @@ pub fn save_to_cache(
         file_size: content.len(),
         source_file_count,
         args_used: args_used.to_string(),
+        working_dir,
     };
 
     // Save cache entry
@@ -209,6 +216,7 @@ fn update_cache_index(cache_dir: &Path, entry: &CacheEntry, filename: &str) -> R
         file_size: entry.file_size,
         source_file_count: entry.source_file_count,
         args_used: entry.args_used.clone(),
+        working_dir: entry.working_dir.clone(),
     };
 
     index.entries.push(index_entry);
@@ -296,19 +304,21 @@ pub fn interactive_cache_selection(cache_dir_override: &Option<String>, osc52: b
         return Ok(());
     }
 
-    // Create selection options with detailed info
+    // Create selection options with simplified info
     let options: Vec<String> = entries.iter()
         .enumerate()
         .map(|(i, entry)| {
             let local_time = entry.timestamp.with_timezone(&chrono::Local);
+            // Use home directory replacement for cleaner paths
+            let working_dir = entry.working_dir.replace(&env::var("HOME").unwrap_or_default(), "~");
             format!(
                 "[{:02}] {} | {} chars | {} tokens | {} files | {}",
                 i + 1,
-                local_time.format("%Y-%m-%d %H:%M:%S"),
+                local_time.format("%Y-%m-%d %H:%M"),
                 entry.file_size,
                 entry.token_count,
                 entry.source_file_count,
-                entry.args_used
+                working_dir
             )
         })
         .collect();
