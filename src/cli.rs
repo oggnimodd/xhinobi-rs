@@ -44,4 +44,8 @@ pub struct Args {
     /// Override default cache directory
     #[arg(long = "cache-dir")]
     pub cache_dir: Option<String>,
+
+    /// Show the cache directory path
+    #[arg(long = "show-cache-dir")]
+    pub show_cache_dir: bool,
 }

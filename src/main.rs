@@ -174,6 +174,19 @@ fn main() {
         return;
     }
 
+    if args.show_cache_dir {
+        match cache::get_cache_dir(&args.cache_dir) {
+            Ok(cache_dir) => {
+                println!("Cache directory: {}", cache_dir.display());
+            }
+            Err(e) => {
+                eprintln!("Error getting cache directory: {}", e);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     // Read from stdin
     let stdin = io::stdin();
     let reader = BufReader::new(stdin.lock());

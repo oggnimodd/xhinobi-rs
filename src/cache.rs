@@ -1,10 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::env;
-use std::io::{self, Read};
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
 use anyhow::{Context, Result};
+use inquire::Select;
 
 use crate::helpers::{copy_to_clipboard_osc52, estimate_tokens, copy_to_clipboard};
 use crate::constants::is_cloud_environment;
@@ -296,79 +296,57 @@ pub fn interactive_cache_selection(cache_dir_override: &Option<String>, osc52: b
         return Ok(());
     }
 
-    println!("Cache Entries (use arrow keys to navigate, Enter to select, Esc to quit):");
-    println!();
-
-    let mut selected_index = 0;
-
-    loop {
-        // Clear screen and redraw
-        print!("\x1B[2J\x1B[1;1H");
-        println!("Cache Entries (use arrow keys to navigate, Enter to select, Esc to quit):");
-        println!();
-
-        for (i, entry) in entries.iter().enumerate() {
-            let marker = if i == selected_index { "►" } else { " " };
+    // Create selection options with detailed info
+    let options: Vec<String> = entries.iter()
+        .enumerate()
+        .map(|(i, entry)| {
             let local_time = entry.timestamp.with_timezone(&chrono::Local);
-            println!(
-                "{} [{:02}] {} | {} chars | {} tokens | {} files | {}",
-                marker,
+            format!(
+                "[{:02}] {} | {} chars | {} tokens | {} files | {}",
                 i + 1,
                 local_time.format("%Y-%m-%d %H:%M:%S"),
                 entry.file_size,
                 entry.token_count,
                 entry.source_file_count,
                 entry.args_used
-            );
-        }
+            )
+        })
+        .collect();
 
-        // Read single key press
-        let mut buffer = [0u8; 1];
-        if io::stdin().read_exact(&mut buffer).is_ok() {
-            match buffer[0] {
-                b'\x1B' => { // Esc sequence
-                    // Check if it's a proper escape (just ESC) or arrow key sequence
-                    let mut seq_buffer = [0u8; 2];
-                    if io::stdin().read_exact(&mut seq_buffer).is_ok() {
-                        if seq_buffer[0] == b'[' {
-                            match seq_buffer[1] {
-                                b'A' => { // Up arrow
-                                    if selected_index > 0 {
-                                        selected_index -= 1;
-                                    }
-                                }
-                                b'B' => { // Down arrow
-                                    if selected_index < entries.len() - 1 {
-                                        selected_index += 1;
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-                    } else {
-                        // Just ESC key pressed
-                        println!("\nCancelled selection.");
-                        return Ok(());
-                    }
-                }
-                b'\r' | b'\n' => { // Enter
-                    if let Some(selected_entry) = entries.get(selected_index) {
-                        let cache_dir = get_cache_dir(cache_dir_override)?;
-                        let cache_file_path = cache_dir.join("sessions").join(&selected_entry.filename);
-                        let cache_content = fs::read_to_string(&cache_file_path).context("Failed to read cache file")?;
-                        let entry: CacheEntry = serde_json::from_str(&cache_content).context("Failed to parse cache entry")?;
+    let selected = Select::new("Select a cache entry to copy to clipboard:", options.clone())
+        .with_page_size(10)
+        .prompt();
 
-                        copy_cache_to_clipboard(&entry, osc52)?;
-                        println!("\nSelected cache entry copied to clipboard!");
-                        return Ok(());
-                    }
-                }
-                b'q' | b'Q' => {
-                    println!("\nCancelled selection.");
-                    return Ok(());
-                }
-                _ => {}
+    match selected {
+        Ok(choice) => {
+            // Find the selected entry by extracting the index from the choice string
+            let selected_index = choice
+                .split(']')
+                .next()
+                .and_then(|s| s.trim_start_matches('[').trim().parse::<usize>().ok())
+                .map(|i| i - 1) // Convert 1-based to 0-based index
+                .ok_or_else(|| anyhow::anyhow!("Could not parse selection index"))?;
+
+            if let Some(selected_entry) = entries.get(selected_index) {
+                let cache_dir = get_cache_dir(cache_dir_override)?;
+                let cache_file_path = cache_dir.join("sessions").join(&selected_entry.filename);
+                let cache_content = fs::read_to_string(&cache_file_path).context("Failed to read cache file")?;
+                let entry: CacheEntry = serde_json::from_str(&cache_content).context("Failed to parse cache entry")?;
+
+                copy_cache_to_clipboard(&entry, osc52)?;
+                println!("Selected cache entry copied to clipboard!");
             }
         }
+        Err(inquire::InquireError::OperationCanceled) => {
+            println!("Selection cancelled.");
+        }
+        Err(inquire::InquireError::OperationInterrupted) => {
+            println!("Operation interrupted.");
+        }
+        Err(e) => {
+            eprintln!("Error during selection: {}", e);
+        }
     }
+
+    Ok(())
 }
