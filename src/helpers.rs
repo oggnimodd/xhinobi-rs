@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::env;
+use std::io::Write;
 use base64::{Engine as _, engine::general_purpose};
 use crate::constants::*;
 
@@ -130,4 +131,51 @@ pub fn copy_to_clipboard_osc52(text: &str) {
 /// Estimates the number of tokens based on the rule of thumb that 1 token is ~4 characters.
 pub fn estimate_tokens(text: &str) -> usize {
     ((text.len() as f64 / 4.0) * 1.1).ceil() as usize
+}
+
+pub fn copy_to_clipboard(text: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let is_wayland = env::var("WAYLAND_DISPLAY").is_ok();
+
+    if is_wayland {
+        if Command::new("wl-copy").arg("--version").output().is_ok() {
+            let mut child = Command::new("wl-copy")
+                .stdin(Stdio::piped())
+                .spawn()?;
+            if let Some(mut stdin) = child.stdin.take() {
+                stdin.write_all(text.as_bytes())?;
+            } else {
+                return Err("Failed to open stdin for the wl-copy process.".into());
+            }
+            let status = child.wait()?;
+            if status.success() {
+                return Ok("wl-copy".to_string());
+            } else {
+                return Err(format!("wl-copy process exited with status: {}", status).into());
+            }
+        }
+    }
+
+    // Fallback to xclip
+    if Command::new("xclip").arg("-version").output().is_err() {
+        return Err("xclip command not found. Please install it to use the clipboard.".into());
+    }
+
+    let mut child = Command::new("xclip")
+        .arg("-selection")
+        .arg("clipboard")
+        .stdin(Stdio::piped())
+        .spawn()?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(text.as_bytes())?;
+    } else {
+        return Err("Failed to open stdin for the xclip process.".into());
+    }
+
+    let status = child.wait()?;
+    if status.success() {
+        Ok("xclip".to_string())
+    } else {
+        Err(format!("xclip process exited with status: {}", status).into())
+    }
 }

@@ -1,15 +1,15 @@
 use clap::Parser;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader};
 use std::fs;
 use std::path::PathBuf;
 use std::env;
-use std::process::{Command, Stdio};
 use regex::Regex;
 
 mod cli;
 mod constants;
 mod helpers;
 mod decomment;
+mod cache;
 
 use cli::Args;
 use constants::*;
@@ -75,14 +75,14 @@ fn get_files(files: &[String], args: &Args) -> Vec<FileData> {
     results
 }
 
-fn process_files(files: &[FileData], args: &Args) {
+fn process_files(files: &[FileData], args: &Args) -> String {
     let mut final_output = String::new();
-    
+
     // Add tree if requested
     if args.tree {
         final_output.push_str(&get_tree_output(&args.ignore));
     }
-    
+
     // Process each file
     for file_data in files {
         if args.prepend_file_name {
@@ -90,23 +90,27 @@ fn process_files(files: &[FileData], args: &Args) {
         }
         final_output.push_str(&file_data.text);
     }
-    
+
     // Minify if requested
     if args.minify {
         let re = Regex::new(r"\s+").unwrap();
         final_output = re.replace_all(&final_output, " ").trim().to_string();
     }
-    
+
+    final_output
+}
+
+fn output_to_clipboard(content: &str, args: &Args) {
     // Handle output based on environment and flags
     if args.osc52 {
-        copy_to_clipboard_osc52(&final_output);
+        copy_to_clipboard_osc52(content);
         println!(
             "Sent {} characters (est. {} tokens) to clipboard via OSC52",
-            final_output.len(),
-            estimate_tokens(&final_output)
+            content.len(),
+            estimate_tokens(content)
         );
     } else if is_cloud_environment() {
-        match create_temp_file(&final_output) {
+        match create_temp_file(content) {
             Ok(temp_path) => {
                 if let Err(e) = open_temp_file_in_code(&temp_path) {
                     eprintln!("Error opening temp file: {}", e);
@@ -115,84 +119,91 @@ fn process_files(files: &[FileData], args: &Args) {
             Err(e) => eprintln!("Error creating temp file: {}", e),
         }
     } else {
-        match copy_to_clipboard(&final_output) {
+        match copy_to_clipboard(content) {
             Ok(method) => println!(
                 "Copied {} characters (est. {} tokens) to clipboard using {}",
-                final_output.len(),
-                estimate_tokens(&final_output),
+                content.len(),
+                estimate_tokens(content),
                 method
             ),
             Err(e) => {
                 eprintln!("Clipboard copy failed: {}", e);
                 println!("Printing content instead:");
-                println!("{}", final_output);
+                println!("{}", content);
             }
         }
-    }
-}
-
-fn copy_to_clipboard(text: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let is_wayland = env::var("WAYLAND_DISPLAY").is_ok();
-
-    if is_wayland {
-        if Command::new("wl-copy").arg("--version").output().is_ok() {
-            let mut child = Command::new("wl-copy")
-                .stdin(Stdio::piped())
-                .spawn()?;
-            if let Some(mut stdin) = child.stdin.take() {
-                stdin.write_all(text.as_bytes())?;
-            } else {
-                return Err("Failed to open stdin for the wl-copy process.".into());
-            }
-            let status = child.wait()?;
-            if status.success() {
-                return Ok("wl-copy".to_string());
-            } else {
-                return Err(format!("wl-copy process exited with status: {}", status).into());
-            }
-        }
-    }
-
-    // Fallback to xclip
-    if Command::new("xclip").arg("-version").output().is_err() {
-        return Err("xclip command not found. Please install it to use the clipboard.".into());
-    }
-
-    let mut child = Command::new("xclip")
-        .arg("-selection")
-        .arg("clipboard")
-        .stdin(Stdio::piped())
-        .spawn()?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(text.as_bytes())?;
-    } else {
-        return Err("Failed to open stdin for the xclip process.".into());
-    }
-
-    let status = child.wait()?;
-    if status.success() {
-        Ok("xclip".to_string())
-    } else {
-        Err(format!("xclip process exited with status: {}", status).into())
     }
 }
 
 fn main() {
     let args = Args::parse();
-    
+
+    // Handle cache-only operations
+    if args.cache {
+        match cache::load_most_recent_cache(&args.cache_dir) {
+            Ok(entry) => {
+                cache::copy_cache_to_clipboard(&entry, args.osc52).unwrap();
+            }
+            Err(e) => {
+                eprintln!("Error loading cache: {}", e);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    if args.list_cache {
+        match cache::interactive_cache_selection(&args.cache_dir, args.osc52) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Error with cache selection: {}", e);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    if args.clear_cache {
+        match cache::clear_cache(&args.cache_dir) {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("Error clearing cache: {}", e);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     // Read from stdin
     let stdin = io::stdin();
     let reader = BufReader::new(stdin.lock());
-    
+
     let file_paths: Vec<String> = reader
         .lines()
         .map(|line| line.unwrap_or_default())
         .filter(|line| !line.is_empty())
         .collect();
-    
+
     if !file_paths.is_empty() {
         let content = get_files(&file_paths, &args);
-        process_files(&content, &args);
+        let final_output = process_files(&content, &args);
+
+        // Output to clipboard
+        output_to_clipboard(&final_output, &args);
+
+        // Save to cache (auto-save by default)
+        let args_string = format!(
+            "tree={} decomment={} minify={} prepend={} osc52={} ignore={}",
+            args.tree,
+            args.decomment,
+            args.minify,
+            args.prepend_file_name,
+            args.osc52,
+            args.ignore.join(",")
+        );
+
+        if let Err(e) = cache::save_to_cache(&final_output, content.len(), &args_string, &args.cache_dir) {
+            eprintln!("Warning: Failed to save to cache: {}", e);
+        }
     }
 }

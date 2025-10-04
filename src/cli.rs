@@ -28,4 +28,20 @@ pub struct Args {
     /// Remove comments from files using tree-sitter
     #[arg(short = 'd', long = "decomment")]
     pub decomment: bool,
+
+    /// Copy most recent cached result to clipboard (no stdin needed)
+    #[arg(long = "cache")]
+    pub cache: bool,
+
+    /// Show interactive list of cached sessions
+    #[arg(long = "list-cache")]
+    pub list_cache: bool,
+
+    /// Clear all cached sessions
+    #[arg(long = "clear-cache")]
+    pub clear_cache: bool,
+
+    /// Override default cache directory
+    #[arg(long = "cache-dir")]
+    pub cache_dir: Option<String>,
 }
