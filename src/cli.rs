@@ -1,4 +1,16 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+#[derive(ValueEnum, Clone, Debug)]
+pub enum TokenCounter {
+    /// Approximate token count (1 token ~= 4 characters, +10% buffer).
+    Estimate,
+    /// Use tiktoken o200k_base encoding (OpenAI/GPT-4o/GPT-4.1/o1).
+    #[value(name = "tiktoken-o200k")]
+    TiktokenO200kBase,
+    /// Approximate Gemini tokens by scaling tiktoken o200k_base counts.
+    #[value(name = "gemini-approx")]
+    GeminiApprox,
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "xhinobi")]
@@ -48,4 +60,16 @@ pub struct Args {
     /// Show the cache directory path
     #[arg(long = "show-cache-dir")]
     pub show_cache_dir: bool,
+
+    /// Token counting strategy
+    #[arg(long = "token-counter", value_enum, default_value = "estimate")]
+    pub token_counter: TokenCounter,
+
+    /// Multiplier used for gemini-approx (default tuned to be close on large codebases)
+    #[arg(long = "gemini-multiplier", default_value = "1.18")]
+    pub gemini_multiplier: f64,
+
+    /// Write output to a .txt file (will not overwrite existing files)
+    #[arg(long = "output-file")]
+    pub output_file: Option<String>,
 }

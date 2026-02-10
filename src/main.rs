@@ -14,6 +14,7 @@ mod cache;
 use cli::Args;
 use constants::*;
 use helpers::*;
+use colored::Colorize;
 
 #[derive(Debug)]
 struct FileData {
@@ -100,14 +101,14 @@ fn process_files(files: &[FileData], args: &Args) -> String {
     final_output
 }
 
-fn output_to_clipboard(content: &str, args: &Args) {
+fn output_to_clipboard(content: &str, args: &Args, token_display: &str) {
     // Handle output based on environment and flags
     if args.osc52 {
         copy_to_clipboard_osc52(content);
         println!(
-            "Sent {} characters (est. {} tokens) to clipboard via OSC52",
+            "Sent {} characters ({}) to clipboard via OSC52",
             content.len(),
-            estimate_tokens(content)
+            token_display
         );
     } else if is_cloud_environment() {
         match create_temp_file(content) {
@@ -121,9 +122,9 @@ fn output_to_clipboard(content: &str, args: &Args) {
     } else {
         match copy_to_clipboard(content) {
             Ok(method) => println!(
-                "Copied {} characters (est. {} tokens) to clipboard using {}",
+                "Copied {} characters ({}) to clipboard using {}",
                 content.len(),
-                estimate_tokens(content),
+                token_display,
                 method
             ),
             Err(e) => {
@@ -200,22 +201,57 @@ fn main() {
     if !file_paths.is_empty() {
         let content = get_files(&file_paths, &args);
         let final_output = process_files(&content, &args);
+        let token_count = count_tokens(
+            &final_output,
+            &args.token_counter,
+            args.gemini_multiplier,
+        );
+        let token_display = token_count_display(token_count, &args.token_counter);
+        let token_display_colored = token_display.cyan().to_string();
 
-        // Output to clipboard
-        output_to_clipboard(&final_output, &args);
+        if let Some(output_path) = &args.output_file {
+            let path = PathBuf::from(output_path);
+            match write_output_file(&path, &final_output) {
+                Ok(_) => {
+                    println!(
+                        "Wrote {} characters ({}) to {}",
+                        final_output.len(),
+                        token_display_colored,
+                        path.display()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("Failed to write output file: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        // Always output to clipboard after write (or when no file requested)
+        output_to_clipboard(&final_output, &args, &token_display_colored);
 
         // Save to cache (auto-save by default)
         let args_string = format!(
-            "tree={} decomment={} minify={} prepend={} osc52={} ignore={}",
+            "tree={} decomment={} minify={} prepend={} osc52={} ignore={} token_counter={} gemini_multiplier={} output_file={}",
             args.tree,
             args.decomment,
             args.minify,
             args.prepend_file_name,
             args.osc52,
-            args.ignore.join(",")
+            args.ignore.join(","),
+            token_counter_id(&args.token_counter),
+            args.gemini_multiplier,
+            args.output_file.clone().unwrap_or_else(|| "none".to_string())
         );
 
-        if let Err(e) = cache::save_to_cache(&final_output, content.len(), &args_string, &args.cache_dir) {
+        if let Err(e) = cache::save_to_cache(
+            &final_output,
+            content.len(),
+            &args_string,
+            &args.cache_dir,
+            token_count,
+            Some(token_counter_id(&args.token_counter).to_string()),
+        ) {
             eprintln!("Warning: Failed to save to cache: {}", e);
         }
     }

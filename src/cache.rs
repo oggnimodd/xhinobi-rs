@@ -6,7 +6,8 @@ use chrono::{DateTime, Utc};
 use anyhow::{Context, Result};
 use inquire::Select;
 
-use crate::helpers::{copy_to_clipboard_osc52, estimate_tokens, copy_to_clipboard};
+use crate::helpers::{copy_to_clipboard_osc52, copy_to_clipboard};
+use colored::Colorize;
 use crate::constants::is_cloud_environment;
 
 const MAX_CACHE_ENTRIES: usize = 50;
@@ -19,6 +20,8 @@ pub struct CacheEntry {
     pub timestamp: DateTime<Utc>,
     pub content: String,
     pub token_count: usize,
+    #[serde(default)]
+    pub token_counter: Option<String>,
     pub file_size: usize,
     pub source_file_count: usize,
     pub args_used: String,
@@ -35,10 +38,21 @@ pub struct CacheIndexEntry {
     pub filename: String,
     pub timestamp: DateTime<Utc>,
     pub token_count: usize,
+    #[serde(default)]
+    pub token_counter: Option<String>,
     pub file_size: usize,
     pub source_file_count: usize,
     pub args_used: String,
     pub working_dir: String,
+}
+
+fn token_prefix(entry: &CacheEntry) -> &'static str {
+    match entry.token_counter.as_deref() {
+        Some("tiktoken-o200k") => "",
+        Some("gemini-approx") => "",
+        Some("estimate") | None => "est. ",
+        _ => "",
+    }
 }
 
 pub fn get_cache_dir(override_dir: &Option<String>) -> Result<PathBuf> {
@@ -66,6 +80,8 @@ pub fn save_to_cache(
     source_file_count: usize,
     args_used: &str,
     cache_dir_override: &Option<String>,
+    token_count: usize,
+    token_counter: Option<String>,
 ) -> Result<()> {
     let cache_dir = get_cache_dir(cache_dir_override)?;
     let sessions_dir = cache_dir.join("sessions");
@@ -83,7 +99,8 @@ pub fn save_to_cache(
     let entry = CacheEntry {
         timestamp,
         content: content.to_string(),
-        token_count: estimate_tokens(content),
+        token_count,
+        token_counter,
         file_size: content.len(),
         source_file_count,
         args_used: args_used.to_string(),
@@ -100,7 +117,12 @@ pub fn save_to_cache(
     // Cleanup old entries if needed
     cleanup_cache(&cache_dir)?;
 
-    println!("Cached result ({} characters, {} tokens)", content.len(), entry.token_count);
+    println!(
+        "Cached result ({} characters, {}{} tokens)",
+        content.len(),
+        token_prefix(&entry),
+        entry.token_count.to_string().cyan()
+    );
 
     Ok(())
 }
@@ -153,9 +175,10 @@ pub fn copy_cache_to_clipboard(entry: &CacheEntry, osc52: bool) -> Result<()> {
     if osc52 {
         copy_to_clipboard_osc52(&entry.content);
         println!(
-            "Copied {} characters (est. {} tokens) to clipboard via OSC52",
+            "Copied {} characters ({}{} tokens) to clipboard via OSC52",
             entry.content.len(),
-            entry.token_count
+            token_prefix(entry),
+            entry.token_count.to_string().cyan()
         );
     } else if is_cloud_environment() {
         use crate::helpers::{create_temp_file, open_temp_file_in_code};
@@ -171,9 +194,10 @@ pub fn copy_cache_to_clipboard(entry: &CacheEntry, osc52: bool) -> Result<()> {
     } else {
         match copy_to_clipboard(&entry.content) {
             Ok(method) => println!(
-                "Copied {} characters (est. {} tokens) to clipboard using {}",
+                "Copied {} characters ({}{} tokens) to clipboard using {}",
                 entry.content.len(),
-                entry.token_count,
+                token_prefix(entry),
+                entry.token_count.to_string().cyan(),
                 method
             ),
             Err(e) => {
@@ -216,6 +240,7 @@ fn update_cache_index(cache_dir: &Path, entry: &CacheEntry, filename: &str) -> R
         filename: filename.to_string(),
         timestamp: entry.timestamp,
         token_count: entry.token_count,
+        token_counter: entry.token_counter.clone(),
         file_size: entry.file_size,
         source_file_count: entry.source_file_count,
         args_used: entry.args_used.clone(),
@@ -319,7 +344,7 @@ pub fn interactive_cache_selection(cache_dir_override: &Option<String>, osc52: b
                 i + 1,
                 local_time.format("%d %b %Y %H:%M"),
                 entry.file_size,
-                entry.token_count,
+                entry.token_count.to_string().cyan(),
                 entry.source_file_count,
                 working_dir
             )

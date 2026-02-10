@@ -25,3 +25,6 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 inquire = "0.7"
+tiktoken-rs = "0.9.1"
+libc = "0.2"
+colored = "3.1.1"
